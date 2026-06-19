@@ -15,8 +15,8 @@
 set -euo pipefail
 
 # ---------- Configuration ---------------------------------------------------
-REPO_URL="https://github.com/Soumabkar/MinIO.git"
-PROJECT_DIR="${HOME}/MinIO"
+REPO_URL="https://github.com/Soumabkar-Data-Stack.git"
+PROJECT_DIR="${HOME}/Soumabkar-Data-Stack.git"
 # Dossier contenant le compose ET le build context (Dockerfile-hive, hive-site.xml, trino-config/)
 SERVICE_DIR="${PROJECT_DIR}/Provisions-Files/docker/dockerfile/Service_MinIO_Trino_Hive"
 COMPOSE_FILE="${SERVICE_DIR}/docker-compose-datalake.yml"
