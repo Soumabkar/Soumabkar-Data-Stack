@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: mart_revenue_by_category
+    description: "Revenu total et panier moyen par catégorie de produit (commandes complétées)"
+    columns:
+      - name: category
+        data_tests:
+          - unique
+          - not_null
+      - name: revenu_total
+        data_tests:
+          - not_null
+
+  - name: mart_monthly_sales
+    description: "CA mensuel et CA cumulé par année/mois (commandes complétées)"
+    columns:
+      - name: ca_mensuel
+        data_tests:
+          - not_null
+
+  - name: mart_top_customers
+    description: "Top clients par dépenses totales (commandes complétées)"
+    columns:
+      - name: customer_id
+        data_tests:
+          - unique
+          - not_null
+
+  - name: mart_cancellation_rate
+    description: "Taux d'annulation par pays — pays avec plus de 10 commandes"
+    columns:
+      - name: country
+        data_tests:
+          - unique
+          - not_null

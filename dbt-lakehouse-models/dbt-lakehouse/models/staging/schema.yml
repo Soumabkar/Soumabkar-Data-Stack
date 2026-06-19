@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: stg_customers
+    description: "Clients nettoyés depuis hive.ecommerce.customers"
+    columns:
+      - name: customer_id
+        description: "Identifiant unique client"
+        data_tests:
+          - unique
+          - not_null
+      - name: email
+        data_tests:
+          - not_null
+      - name: country
+        data_tests:
+          - not_null
+
+  - name: stg_products
+    description: "Produits nettoyés depuis hive.ecommerce.products"
+    columns:
+      - name: product_id
+        data_tests:
+          - unique
+          - not_null
+      - name: category
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['Electronics', 'Clothing', 'Food', 'Books', 'Sports', 'Home']
+
+  - name: stg_orders
+    description: "Commandes nettoyées depuis hive.ecommerce.orders"
+    columns:
+      - name: order_id
+        data_tests:
+          - unique
+          - not_null
+      - name: status
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['COMPLETED', 'PENDING', 'CANCELLED', 'SHIPPED']
+      - name: total_amount
+        data_tests:
+          - not_null
