@@ -15,8 +15,8 @@
 set -euo pipefail
 
 # ---------- Configuration ---------------------------------------------------
-REPO_URL="https://github.com/Soumabkar-Data-Stack.git"
-PROJECT_DIR="${HOME}/Soumabkar-Data-Stack.git"
+REPO_URL="https://github.com/Soumabkar/Soumabkar-Data-Stack.git"
+PROJECT_DIR="${HOME}/Soumabkar-Data-Stack"
 # Dossier contenant le compose ET le build context (Dockerfile-hive, hive-site.xml, trino-config/)
 SERVICE_DIR="${PROJECT_DIR}/Provisions-Files/docker/dockerfile/Service_MinIO_Trino_Hive"
 COMPOSE_FILE="${SERVICE_DIR}/docker-compose-datalake.yml"
@@ -121,7 +121,7 @@ fi
 
 if [ ! -d dbt-venv ]; then
   $PYTHON_BIN -m venv dbt-venv
-  ok "venv créé (via $PYTHON_BIN $TARGET_PYTHON)"
+  ok "venv créé (via $PYTHON_BIN)"
 fi
 
 # shellcheck source=/dev/null
@@ -205,8 +205,26 @@ if [ "$TRINO_UP" -eq 0 ]; then
   log "  ⚠ Trino pas encore prêt après 120s — vérifiez : docker compose logs trino"
 fi
 
-# ---------- 8. Vérifications finales ----------------------------------------
-log "=== [8/8] Vérifications finales ==="
+# ---------- 8. Chargement des données + vérifications ----------------------
+log "=== [8/8] Chargement des données initiales ==="
+
+if [ "$SKIP_DATA" = "--skip-data" ]; then
+  log "  → Ignoré (--skip-data)"
+else
+  PIPELINE_DIR="${PROJECT_DIR}/Provisions-Files/project/python/MinIO"
+  if [ -f "$PIPELINE_DIR/pipeline.py" ]; then
+    cd "$PIPELINE_DIR"
+    source venv/bin/activate
+    log "  Exécution pipeline.py..."
+    python3 pipeline.py
+    ok "Pipeline exécuté"
+    deactivate
+  else
+    log "  ⚠ pipeline.py introuvable — ignorer ou vérifier le chemin"
+  fi
+fi
+
+log "=== Statut containers ==="
 sg docker -c "docker compose -f $COMPOSE_FILE ps"
 
 # ---------- Résumé ----------------------------------------------------------
@@ -217,7 +235,6 @@ echo " data-stack prêt !"
 echo "=============================================="
 echo " MinIO    : http://${IP}:9001  (admin / [voir hive-site.xml])"
 echo " Trino    : http://${IP}:8080"
-echo " Airflow  : http://${IP}:8088  (airflow/airflow)"
 echo ""
 echo " dbt :"
 echo "   cd ~/dbt/lakehouse_project"
