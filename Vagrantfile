@@ -22,17 +22,17 @@ Vagrant.configure("2") do |config|
   # # Provisionnement OS
 
   # # Provisionnement python
-  # config.vm.provision "shell", path: "Provisions-Files/OS/provision/python/provision_prepa_env_python.sh"
-  # config.vm.provision "shell", path: "Provisions-Files/OS/provision/python/provision-install-python.sh"
+  config.vm.provision "shell", path: "Provisions-Files/OS/provision/python/provision_prepa_env_python.sh"
+  config.vm.provision "shell", path: "Provisions-Files/OS/provision/python/provision-install-python.sh"
 
-  # # Provisionnement Java, Scala
-  # config.vm.provision "shell", path: "Provisions-Files/OS/provision/scala/provision-install-java.sh"
+  # Provisionnement Java, Scala
+  config.vm.provision "shell", path: "Provisions-Files/OS/provision/scala/provision-install-java.sh"
   # config.vm.provision "shell", path: "Provisions-Files/OS/provision/scala/provision-install-sdkman-scala-sbt.sh"
    config.vm.provision "shell", path: "Provisions-Files/OS/provision/scala/provision_prepa_env_scala.sh"
   
 
-  # # Provisionnement Docker
-  # config.vm.provision "shell", path: "Provisions-Files/docker/provision/provision_install_docker.sh"
+  # Provisionnement Docker
+  config.vm.provision "shell", path: "Provisions-Files/docker/provision/provision_install_docker.sh"
 
   # # Provisionnement Kubernetes
   # config.vm.provision "shell", path: "Provisions-Files/kubernetes/provision_install_arkade.sh"
@@ -49,9 +49,9 @@ Vagrant.configure("2") do |config|
   # config.vm.provision "file",
   #   source:      "Provisions-Files/docker/dockerfile/docker-compose-datalake-v1.yml",
   #   destination: "/home/vagrant/docker/dockerfile/docker-compose-datalake-v1.yml"
-  # config.vm.provision "file",
-  #   source:      "Provisions-Files/docker/provision/provision_download_image.sh",
-  #   destination: "/home/vagrant/docker/dockerfile/provision_download_image.sh"
+  config.vm.provision "file",
+    source:      "Provisions-Files/docker/provision/provision_download_image.sh",
+    destination: "/home/vagrant/docker/dockerfile/provision_download_image.sh"
   # config.vm.provision "file",
   #   source:      "Provisions-Files/docker/dockerfile/Dockerfile-hive",
   #   destination: "/home/vagrant/docker/dockerfile/Dockerfile-hive"
