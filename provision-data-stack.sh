@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # ============================================================================
-# provision-data-stack.sh  v3.0
+# provision-data-stack.sh  v4.0
 # Provisionnement complet de la VM data-stack
-# Stack : MinIO + Hive Metastore + Trino + dbt
+# Stack : MinIO + Hive Metastore + Trino + dbt + Airflow
+#
+# Nouveautés v4.0 vs v3.0 :
+#   - Service Airflow démarré avec la stack (orchestration pipeline -> dbt)
+#   - Health-check Airflow dédié (UI sur :8088)
+#   - DAG lakehouse_pipeline dépausé automatiquement
+#   - Étapes numérotées sur 10 (ajout étape Airflow)
 #
 # Nouveautés v3.0 vs v2.1 :
 #   - Intégration dbt complète (modèles staging + marts depuis le repo)
 #   - Création du schéma Hive avec la bonne location (s3a://datalake/)
 #   - dbt run + dbt test automatiques après le pipeline
-#   - Étapes numérotées sur 9 (ajout étape dbt)
 # ============================================================================
 set -euo pipefail
 
@@ -26,13 +31,13 @@ log() { echo "[$(date '+%H:%M:%S')] $*"; }
 ok()  { echo "[$(date '+%H:%M:%S')] ✓ $*"; }
 
 # ---------- 1. Mise à jour système ------------------------------------------
-log "=== [1/9] Mise à jour système ==="
+log "=== [1/10] Mise à jour système ==="
 sudo apt-get update -qq
 sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq
 ok "Système à jour"
 
 # ---------- 2. Paquets de base ----------------------------------------------
-log "=== [2/9] Paquets de base ==="
+log "=== [2/10] Paquets de base ==="
 sudo apt-get install -y -qq \
   git curl wget \
   python3 python3-pip python3-venv \
@@ -42,7 +47,7 @@ sudo apt-get install -y -qq \
 ok "Paquets installés"
 
 # ---------- 3. JAVA_HOME ----------------------------------------------------
-log "=== [3/9] JAVA_HOME ==="
+log "=== [3/10] JAVA_HOME ==="
 JAVA_EXPORT='export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64'
 PATH_EXPORT='export PATH=$JAVA_HOME/bin:$PATH'
 grep -qxF "$JAVA_EXPORT" ~/.bashrc || echo "$JAVA_EXPORT" >> ~/.bashrc
@@ -52,7 +57,7 @@ export PATH=$JAVA_HOME/bin:$PATH
 ok "JAVA_HOME configuré → $(java -version 2>&1 | head -1)"
 
 # ---------- 4. Docker -------------------------------------------------------
-log "=== [4/9] Docker ==="
+log "=== [4/10] Docker ==="
 if ! command -v docker &>/dev/null; then
   curl -fsSL https://get.docker.com | sudo sh
   ok "Docker installé"
@@ -66,7 +71,7 @@ if ! groups "$USER" | grep -q docker; then
 fi
 
 # ---------- 5. Clone / mise à jour du projet --------------------------------
-log "=== [5/9] Clone / mise à jour du projet ==="
+log "=== [5/10] Clone / mise à jour du projet ==="
 if [ ! -d "$PROJECT_DIR" ]; then
   git clone "$REPO_URL" "$PROJECT_DIR"
   ok "Dépôt cloné → $PROJECT_DIR"
@@ -76,7 +81,7 @@ else
 fi
 
 # ---------- 6. Python 3.12 + venv dbt ---------------------------------------
-log "=== [6/9] Environnement dbt ==="
+log "=== [6/10] Environnement dbt ==="
 
 # dbt-trino requiert Python ≤ 3.12 (incompatible Python 3.13+)
 PYTHON_BIN="python3"
@@ -221,7 +226,7 @@ if [ -d "$PIPELINE_DIR" ]; then
 fi
 
 # ---------- 7. Démarrage de la stack ----------------------------------------
-log "=== [7/9] Démarrage de la stack Docker Compose ==="
+log "=== [7/10] Démarrage de la stack Docker Compose ==="
 cd "$SERVICE_DIR"
 sg docker -c "docker compose -f $COMPOSE_FILE up -d --build"
 ok "Stack démarrée"
@@ -237,11 +242,33 @@ for i in $(seq 1 24); do
 done
 [ "$TRINO_UP" -eq 0 ] && log "  ⚠ Trino pas prêt après 120s — vérifier : docker compose logs trino"
 
-# ---------- 8. Pipeline de données ------------------------------------------
-log "=== [8/9] Chargement des données initiales ==="
+# Health-check Airflow (max 180s — premier démarrage = db migrate + build)
+log "  Attente Airflow prêt (UI :8088)..."
+AIRFLOW_UP=0
+for i in $(seq 1 36); do
+  if curl -sf http://localhost:8088/health 2>/dev/null | grep -q '"healthy"'; then
+    AIRFLOW_UP=1; break
+  fi
+  sleep 5
+done
+if [ "$AIRFLOW_UP" -eq 1 ]; then
+  ok "Airflow prêt → http://localhost:8088 (admin/admin)"
+  # Dépauser le DAG lakehouse_pipeline (idempotent)
+  sg docker -c "docker exec airflow airflow dags unpause lakehouse_pipeline" 2>/dev/null \
+    && ok "DAG lakehouse_pipeline dépausé" \
+    || log "  ⚠ DAG pas encore chargé — le dépauser manuellement dans l'UI"
+else
+  log "  ⚠ Airflow pas prêt après 180s — vérifier : docker compose logs airflow"
+fi
+
+# ---------- 8. Amorçage initial (pipeline + dbt en direct) ------------------
+# Premier remplissage hors Airflow pour garantir des données dès la fin du
+# provisionnement. Les exécutions suivantes passent par le DAG Airflow.
+log "=== [8/10] Amorçage initial (pipeline + dbt) ==="
 if [ "$SKIP_DATA" = "--skip-data" ]; then
   log "  → Ignoré (--skip-data)"
 else
+  # 8a. Pipeline d'ingestion
   if [ -f "$PIPELINE_DIR/pipeline.py" ]; then
     cd "$PIPELINE_DIR"
     source venv/bin/activate
@@ -253,29 +280,38 @@ else
   else
     log "  ⚠ pipeline.py introuvable"
   fi
-fi
 
-# ---------- 9. dbt run + dbt test -------------------------------------------
-log "=== [9/9] dbt run + dbt test ==="
-if [ "$SKIP_DATA" = "--skip-data" ]; then
-  log "  → Ignoré (--skip-data)"
-else
+  # 8b. dbt run + test
   source "$DBT_DIR/dbt-venv/bin/activate"
   cd "$DBT_PROJECT"
-
-  # Vérifier que des modèles existent
   MODEL_COUNT=$(find models -name "*.sql" 2>/dev/null | wc -l)
   if [ "$MODEL_COUNT" -gt 0 ]; then
     log "  dbt run ($MODEL_COUNT modèles)..."
     dbt run  && ok "dbt run OK"
     dbt test && ok "dbt test OK"
   else
-    log "  ⚠ Aucun modèle SQL trouvé dans $DBT_PROJECT/models — skip dbt"
+    log "  ⚠ Aucun modèle SQL trouvé — skip dbt"
   fi
   deactivate
+  cd "$PROJECT_DIR"
 fi
 
-# ---------- Statut containers -----------------------------------------------
+# ---------- 9. Vérification du DAG Airflow ----------------------------------
+log "=== [9/10] Vérification du DAG Airflow ==="
+if [ "$AIRFLOW_UP" -eq 1 ]; then
+  # Lister les DAGs et vérifier la présence de lakehouse_pipeline
+  if sg docker -c "docker exec airflow airflow dags list" 2>/dev/null | grep -q lakehouse_pipeline; then
+    ok "DAG lakehouse_pipeline présent et chargé"
+    log "  → Orchestration : ingest_pipeline → dbt_run → dbt_test (schedule @daily)"
+  else
+    log "  ⚠ DAG lakehouse_pipeline absent — vérifier airflow/dags/ et les logs"
+  fi
+else
+  log "  → Airflow indisponible, orchestration manuelle (voir étape 8)"
+fi
+
+# ---------- 10. Statut final ------------------------------------------------
+log "=== [10/10] Statut des containers ==="
 sg docker -c "docker compose -f $COMPOSE_FILE ps"
 
 # ---------- Résumé ----------------------------------------------------------
@@ -286,13 +322,16 @@ echo " data-stack prêt !"
 echo "=============================================="
 echo " MinIO   : http://${IP}:9001  (admin / voir hive-site.xml)"
 echo " Trino   : http://${IP}:8080"
+echo " Airflow : http://${IP}:8088  (admin/admin)"
 echo ""
-echo " Pipeline données :"
-echo "   cd ${PIPELINE_DIR}"
-echo "   source venv/bin/activate && python3 pipeline.py"
+echo " Orchestration (recommandé) :"
+echo "   → Airflow UI → DAG 'lakehouse_pipeline' → Trigger"
+echo "   ingest_pipeline → dbt_run → dbt_test"
 echo ""
-echo " dbt :"
-echo "   cd ${DBT_PROJECT}"
-echo "   source ${DBT_DIR}/dbt-venv/bin/activate"
-echo "   dbt run && dbt test"
+echo " Exécution manuelle (fallback) :"
+echo "   Pipeline : cd ${PIPELINE_DIR}"
+echo "              source venv/bin/activate && python3 pipeline.py"
+echo "   dbt      : cd ${DBT_PROJECT}"
+echo "              source ${DBT_DIR}/dbt-venv/bin/activate"
+echo "              dbt run && dbt test"
 echo "=============================================="

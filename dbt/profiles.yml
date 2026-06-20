@@ -1,0 +1,21 @@
+lakehouse_project:
+  target: dev
+  outputs:
+    dev:
+      type: trino
+      method: none
+      user: dbt
+      host: localhost
+      port: 8080
+      database: hive
+      schema: ecommerce
+      threads: 4
+    airflow:
+      type: trino
+      method: none
+      user: dbt
+      host: trino
+      port: 8080
+      database: hive
+      schema: ecommerce
+      threads: 4
